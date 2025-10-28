@@ -345,13 +345,13 @@ class TimetableAPITester:
             if success:
                 self.created_rooms.append(room)
         
-        # Create timeslots
+        # Create timeslots with proper start/end times
         timeslots_data = [
-            {"day": "Monday", "period": 1, "label": "9:00 AM - 10:00 AM"},
-            {"day": "Monday", "period": 2, "label": "10:00 AM - 11:00 AM"},
-            {"day": "Tuesday", "period": 1, "label": "9:00 AM - 10:00 AM"},
-            {"day": "Tuesday", "period": 2, "label": "10:00 AM - 11:00 AM"},
-            {"day": "Wednesday", "period": 1, "label": "9:00 AM - 10:00 AM"}
+            {"day": "Monday", "period": 1, "start_time": "09:00 AM", "end_time": "10:00 AM"},
+            {"day": "Monday", "period": 2, "start_time": "10:00 AM", "end_time": "11:00 AM"},
+            {"day": "Tuesday", "period": 1, "start_time": "09:00 AM", "end_time": "10:00 AM"},
+            {"day": "Tuesday", "period": 2, "start_time": "10:00 AM", "end_time": "11:00 AM"},
+            {"day": "Wednesday", "period": 1, "start_time": "09:00 AM", "end_time": "10:00 AM"}
         ]
         
         for timeslot_data in timeslots_data:
