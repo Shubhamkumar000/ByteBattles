@@ -201,12 +201,21 @@ class TimetableAPITester:
         success, result = self.run_api_test('GET', 'timeslots', 200)
         self.log_test("GET /timeslots (empty)", success, result if not success else "")
         
-        # Test POST timeslot
-        timeslot_data = {"day": "Monday", "period": 1, "label": "9:00 AM - 10:00 AM"}
+        # Test POST timeslot with start_time and end_time
+        timeslot_data = {
+            "day": "Monday", 
+            "period": 1, 
+            "start_time": "09:00 AM",
+            "end_time": "10:00 AM"
+        }
         success, result = self.run_api_test('POST', 'timeslots', 200, timeslot_data)
         if success:
             self.created_timeslots.append(result)
-            self.log_test("POST /timeslots", True)
+            # Verify start_time and end_time are saved
+            if result.get('start_time') == timeslot_data['start_time'] and result.get('end_time') == timeslot_data['end_time']:
+                self.log_test("POST /timeslots (with start/end times)", True)
+            else:
+                self.log_test("POST /timeslots (time validation)", False, "Start/end times not saved correctly")
         else:
             self.log_test("POST /timeslots", False, result)
             return False
