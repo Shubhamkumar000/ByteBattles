@@ -113,9 +113,10 @@ class TimetableAPITester:
         success, result = self.run_api_test('GET', 'subjects', 200)
         self.log_test("GET /subjects (empty)", success, result if not success else "")
         
-        # Test POST subject
+        # Test POST subject with subject code
         subject_data = {
             "name": "Mathematics",
+            "code": "MATH101",
             "sessions_per_week": 5,
             "teacher_id": teacher['id'],
             "class_group": "Class A"
@@ -123,7 +124,11 @@ class TimetableAPITester:
         success, result = self.run_api_test('POST', 'subjects', 200, subject_data)
         if success:
             self.created_subjects.append(result)
-            self.log_test("POST /subjects", True)
+            # Verify subject code is saved
+            if result.get('code') == subject_data['code']:
+                self.log_test("POST /subjects (with subject code)", True)
+            else:
+                self.log_test("POST /subjects (subject code validation)", False, "Subject code not saved correctly")
         else:
             self.log_test("POST /subjects", False, result)
             return False
