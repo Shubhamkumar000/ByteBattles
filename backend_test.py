@@ -333,11 +333,11 @@ class TimetableAPITester:
             if success:
                 self.created_teachers.append(teacher)
         
-        # Create rooms
+        # Create rooms with room types
         rooms_data = [
-            {"name": "Room 101", "capacity": 40},
-            {"name": "Room 102", "capacity": 35},
-            {"name": "Lab A", "capacity": 30}
+            {"name": "Room 101", "capacity": 40, "room_type": "Classroom"},
+            {"name": "Room 102", "capacity": 35, "room_type": "Classroom"},
+            {"name": "Lab A", "capacity": 30, "room_type": "Laboratory"}
         ]
         
         for room_data in rooms_data:
