@@ -237,6 +237,83 @@ class TimetableAPITester:
         
         return True
 
+    def test_default_timeslots_generation(self):
+        """Test default timeslots generation"""
+        print("\n🔍 Testing Default TimeSlots Generation...")
+        
+        # Test generate default timeslots
+        success, result = self.run_api_test('POST', 'timeslots/generate-default', 200)
+        if success:
+            expected_count = 30  # 5 days × 6 periods
+            actual_count = result.get('count', 0)
+            if actual_count == expected_count:
+                self.log_test("POST /timeslots/generate-default", True, f"Generated {actual_count} slots")
+            else:
+                self.log_test("POST /timeslots/generate-default (count validation)", False, f"Expected {expected_count}, got {actual_count}")
+        else:
+            self.log_test("POST /timeslots/generate-default", False, result)
+            return False
+        
+        # Verify timeslots were created with proper time ranges
+        success, timeslots = self.run_api_test('GET', 'timeslots', 200)
+        if success and len(timeslots) > 0:
+            # Check if first timeslot has proper time format
+            first_slot = timeslots[0]
+            if first_slot.get('start_time') and first_slot.get('end_time'):
+                self.log_test("Default timeslots time format validation", True)
+            else:
+                self.log_test("Default timeslots time format validation", False, "Missing start_time or end_time")
+        
+        return True
+
+    def test_analytics_endpoint(self):
+        """Test analytics endpoint"""
+        print("\n🔍 Testing Analytics Endpoint...")
+        
+        success, result = self.run_api_test('GET', 'analytics', 200)
+        if success:
+            # Verify analytics structure
+            required_fields = ['total_classes', 'teacher_workload', 'room_utilization', 'peak_hours', 'free_slots']
+            missing_fields = [field for field in required_fields if field not in result]
+            if missing_fields:
+                self.log_test("GET /analytics (structure validation)", False, f"Missing fields: {missing_fields}")
+            else:
+                self.log_test("GET /analytics", True, f"Analytics data retrieved successfully")
+        else:
+            self.log_test("GET /analytics", False, result)
+        
+        return True
+
+    def test_csv_export(self):
+        """Test CSV export functionality"""
+        print("\n🔍 Testing CSV Export...")
+        
+        # First ensure we have some timetable data
+        success, timetable = self.run_api_test('GET', 'timetable', 200)
+        if not success or len(timetable) == 0:
+            self.log_test("CSV Export (no data)", True, "No timetable data to export - skipping CSV test")
+            return True
+        
+        # Test CSV export
+        try:
+            import requests
+            url = f"{self.api_url}/timetable/export/csv"
+            response = requests.get(url, timeout=10)
+            
+            if response.status_code == 200:
+                # Check if response is CSV format
+                content_type = response.headers.get('content-type', '')
+                if 'csv' in content_type.lower():
+                    self.log_test("GET /timetable/export/csv", True, "CSV export successful")
+                else:
+                    self.log_test("GET /timetable/export/csv (content-type)", False, f"Expected CSV, got {content_type}")
+            else:
+                self.log_test("GET /timetable/export/csv", False, f"Status {response.status_code}")
+        except Exception as e:
+            self.log_test("GET /timetable/export/csv", False, f"Request failed: {str(e)}")
+        
+        return True
+
     def test_timetable_generation(self):
         """Test timetable generation with complete data"""
         print("\n🔍 Testing Timetable Generation...")
