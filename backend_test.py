@@ -55,19 +55,27 @@ class TimetableAPITester:
             return False, f"Request failed: {str(e)}"
 
     def test_teachers_crud(self):
-        """Test Teachers CRUD operations"""
+        """Test Teachers CRUD operations with enhanced fields"""
         print("\n🔍 Testing Teachers CRUD...")
         
         # Test GET empty teachers
         success, result = self.run_api_test('GET', 'teachers', 200)
         self.log_test("GET /teachers (empty)", success, result if not success else "")
         
-        # Test POST teacher
-        teacher_data = {"name": "Dr. Smith"}
+        # Test POST teacher with enhanced fields (email and department)
+        teacher_data = {
+            "name": "Dr. Smith", 
+            "email": "dr.smith@school.edu",
+            "department": "Mathematics"
+        }
         success, result = self.run_api_test('POST', 'teachers', 200, teacher_data)
         if success:
             self.created_teachers.append(result)
-            self.log_test("POST /teachers", True)
+            # Verify enhanced fields are saved
+            if result.get('email') == teacher_data['email'] and result.get('department') == teacher_data['department']:
+                self.log_test("POST /teachers (with email & department)", True)
+            else:
+                self.log_test("POST /teachers (enhanced fields validation)", False, "Email or department not saved correctly")
         else:
             self.log_test("POST /teachers", False, result)
             return False
