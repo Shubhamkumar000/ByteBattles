@@ -431,14 +431,21 @@ class TimetableAPITester:
         print(f"Testing against: {self.base_url}")
         
         try:
-            # Test basic CRUD operations
+            # Test basic CRUD operations with enhanced features
             self.test_teachers_crud()
             self.test_subjects_crud()
             self.test_rooms_crud()
             self.test_timeslots_crud()
             
+            # Test new enhanced features
+            self.test_default_timeslots_generation()
+            self.test_analytics_endpoint()
+            
             # Test timetable generation
             self.test_timetable_generation()
+            
+            # Test CSV export (after timetable generation)
+            self.test_csv_export()
             
         except Exception as e:
             print(f"❌ Test suite failed with error: {str(e)}")
