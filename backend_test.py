@@ -158,12 +158,20 @@ class TimetableAPITester:
         success, result = self.run_api_test('GET', 'rooms', 200)
         self.log_test("GET /rooms (empty)", success, result if not success else "")
         
-        # Test POST room
-        room_data = {"name": "Room 101", "capacity": 40}
+        # Test POST room with room type
+        room_data = {
+            "name": "Room 101", 
+            "capacity": 40,
+            "room_type": "Laboratory"
+        }
         success, result = self.run_api_test('POST', 'rooms', 200, room_data)
         if success:
             self.created_rooms.append(result)
-            self.log_test("POST /rooms", True)
+            # Verify room type is saved
+            if result.get('room_type') == room_data['room_type']:
+                self.log_test("POST /rooms (with room type)", True)
+            else:
+                self.log_test("POST /rooms (room type validation)", False, "Room type not saved correctly")
         else:
             self.log_test("POST /rooms", False, result)
             return False
