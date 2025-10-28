@@ -385,14 +385,21 @@ class TimetableAPITester:
         success, result = self.run_api_test('GET', 'timetable', 200)
         if success and len(result) > 0:
             self.log_test("GET /timetable", True, f"Retrieved {len(result)} timetable entries")
-            # Verify timetable entries have required fields
+            # Verify timetable entries have required fields including enhanced ones
             entry = result[0]
-            required_fields = ['subject_name', 'teacher_name', 'room_name', 'day', 'period']
+            required_fields = ['subject_name', 'subject_code', 'teacher_name', 'room_name', 'day', 'period', 'start_time', 'end_time']
             missing_fields = [field for field in required_fields if field not in entry or entry[field] is None]
             if missing_fields:
-                self.log_test("Timetable entry validation", False, f"Missing fields: {missing_fields}")
+                self.log_test("Enhanced timetable entry validation", False, f"Missing fields: {missing_fields}")
             else:
-                self.log_test("Timetable entry validation", True)
+                self.log_test("Enhanced timetable entry validation", True)
+                
+            # Specifically test that teacher names are not 'Unknown' (key fix mentioned)
+            unknown_teachers = [e for e in result if e.get('teacher_name') == 'Unknown' or e.get('teacher_name') == 'N/A']
+            if unknown_teachers:
+                self.log_test("Teacher name enrichment fix", False, f"Found {len(unknown_teachers)} entries with Unknown/N/A teacher names")
+            else:
+                self.log_test("Teacher name enrichment fix", True, "All teacher names properly resolved")
         else:
             self.log_test("GET /timetable", False, "No timetable entries returned")
         
