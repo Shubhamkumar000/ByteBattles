@@ -321,11 +321,11 @@ class TimetableAPITester:
         # Setup complete data for timetable generation
         print("Setting up test data for timetable generation...")
         
-        # Create teachers
+        # Create teachers with enhanced fields
         teachers_data = [
-            {"name": "Dr. Smith"},
-            {"name": "Prof. Johnson"},
-            {"name": "Ms. Davis"}
+            {"name": "Dr. Smith", "email": "smith@school.edu", "department": "Mathematics"},
+            {"name": "Prof. Johnson", "email": "johnson@school.edu", "department": "Physics"},
+            {"name": "Ms. Davis", "email": "davis@school.edu", "department": "Chemistry"}
         ]
         
         for teacher_data in teachers_data:
