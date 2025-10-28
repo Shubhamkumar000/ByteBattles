@@ -359,12 +359,12 @@ class TimetableAPITester:
             if success:
                 self.created_timeslots.append(timeslot)
         
-        # Create subjects
+        # Create subjects with subject codes
         if self.created_teachers:
             subjects_data = [
-                {"name": "Mathematics", "sessions_per_week": 3, "teacher_id": self.created_teachers[0]['id'], "class_group": "Class A"},
-                {"name": "Physics", "sessions_per_week": 2, "teacher_id": self.created_teachers[1]['id'], "class_group": "Class A"},
-                {"name": "Chemistry", "sessions_per_week": 2, "teacher_id": self.created_teachers[2]['id'], "class_group": "Class A"}
+                {"name": "Mathematics", "code": "MATH101", "sessions_per_week": 3, "teacher_id": self.created_teachers[0]['id'], "class_group": "Class A"},
+                {"name": "Physics", "code": "PHYS101", "sessions_per_week": 2, "teacher_id": self.created_teachers[1]['id'], "class_group": "Class A"},
+                {"name": "Chemistry", "code": "CHEM101", "sessions_per_week": 2, "teacher_id": self.created_teachers[2]['id'], "class_group": "Class A"}
             ]
             
             for subject_data in subjects_data:
