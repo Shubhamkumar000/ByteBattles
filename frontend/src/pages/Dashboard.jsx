@@ -10,7 +10,182 @@ import { Users, BookOpen, Building2, Clock, Calendar, Sparkles, Download, BarCha
 import TimetableGrid from "@/components/TimetableGrid";
 import AnalyticsPanel from "@/components/AnalyticsPanel";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
+const useMockIfBackendDown = process.env.REACT_APP_MOCK === "true";
+
+function generateId() {
+  return `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function readLocal(key, fallback = []) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeLocal(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {}
+}
+
+function generateLocalTimetable({ teachers, subjects, rooms, timeslots }) {
+  // Ensure arrays
+  const subjectsList = Array.isArray(subjects) ? subjects : [];
+  const timeslotsList = Array.isArray(timeslots) ? timeslots : [];
+  const roomsList = Array.isArray(rooms) ? rooms : [];
+
+  // Index helpers
+  const timeslotById = new Map(timeslotsList.map((ts) => [ts.id, ts]));
+  const days = [...new Set(timeslotsList.map((ts) => ts.day))];
+
+  // Schedules and usage trackers
+  const teacherTs = new Map(); // teacherId -> Set(timeslotId)
+  const classTs = new Map(); // classGroup -> Set(timeslotId)
+  const roomTs = new Map(); // roomId -> Set(timeslotId)
+  const teacherDayPeriods = new Map(); // teacherId -> day -> Set(period)
+  const teacherDayLoad = new Map(); // teacherId -> day -> count
+  const teacherPeriodLoad = new Map(); // teacherId -> period -> count (across all days)
+  const subjectDayLoad = new Map(); // subjectId -> day -> count
+  const roomUsage = new Map(); // roomId -> overall count
+
+  const ensureSet = (map, key) => {
+    if (!map.has(key)) map.set(key, new Set());
+    return map.get(key);
+  };
+  const ensureMap = (map, key) => {
+    if (!map.has(key)) map.set(key, new Map());
+    return map.get(key);
+  };
+
+  const inc = (m, k) => m.set(k, (m.get(k) || 0) + 1);
+
+  // Sort subjects by sessions per week desc, then randomize slight order
+  const sortedSubjects = [...subjectsList]
+    .sort((a, b) => (b.sessions_per_week || 0) - (a.sessions_per_week || 0))
+    .map((s) => ({ s, r: Math.random() }))
+    .sort((a, b) => a.r - b.r)
+    .map(({ s }) => s);
+
+  const schedule = [];
+
+  for (const subject of sortedSubjects) {
+    const sessions = Math.max(1, Number(subject.sessions_per_week || 1));
+    const teacherId = subject.teacher_id;
+    const classGroup = subject.class_group || "Class A";
+
+    for (let sIdx = 0; sIdx < sessions; sIdx += 1) {
+      // Rank timeslots by a score that spreads across days and avoids consecutive periods
+      // Shuffle timeslots to avoid deterministic patterns
+      const shuffledTs = [...timeslotsList]
+        .map((ts) => ({ ts, r: Math.random() }))
+        .sort((a, b) => a.r - b.r)
+        .map(({ ts }) => ts);
+
+      const scoredTs = shuffledTs
+        .map((ts) => {
+          const tSet = ensureSet(teacherTs, teacherId);
+          const cSet = ensureSet(classTs, classGroup);
+          const tDayPeriods = ensureMap(teacherDayPeriods, teacherId);
+          const dayPeriods = ensureSet(tDayPeriods, ts.day);
+          const tDayLoads = ensureMap(teacherDayLoad, teacherId);
+          const tDayCount = tDayLoads.get(ts.day) || 0;
+          const subjDayLoads = ensureMap(subjectDayLoad, subject.id);
+          const subjDayCount = subjDayLoads.get(ts.day) || 0;
+          const tPeriodLoad = ensureMap(teacherPeriodLoad, teacherId);
+          const periodCount = tPeriodLoad.get(ts.period) || 0;
+
+          // Hard conflicts
+          const hardConflict = tSet.has(ts.id) || cSet.has(ts.id);
+
+          // Soft constraint: avoid consecutive periods for teacher
+          const consecutive = dayPeriods.has((ts.period || 0) - 1) || dayPeriods.has((ts.period || 0) + 1);
+
+          // Score components: lower is better
+          let score = 0;
+          score += subjDayCount * 5; // spread subject across days
+          score += tDayCount * 3; // spread teacher load across days
+          score += consecutive ? 20 : 0; // avoid consecutive teaching
+          score += periodCount * 6; // avoid same period every day for a teacher
+          score += Math.random(); // small jitter to diversify choices
+
+          return { ts, score, hardConflict };
+        })
+        .filter((x) => !x.hardConflict)
+        .sort((a, b) => a.score - b.score);
+
+      let chosen = null;
+      let chosenRoom = null;
+
+      for (const candidate of scoredTs) {
+        const { ts } = candidate;
+        // Pick a room with minimal overall usage that is free at this timeslot
+        const availableRooms = roomsList.filter((room) => !ensureSet(roomTs, room.id).has(ts.id));
+        if (availableRooms.length === 0) continue;
+        availableRooms.sort((ra, rb) => (roomUsage.get(ra.id) || 0) - (roomUsage.get(rb.id) || 0));
+        const room = availableRooms[0];
+
+        chosen = ts;
+        chosenRoom = room;
+        break;
+      }
+
+      if (chosen && chosenRoom) {
+        // Commit assignment
+        ensureSet(teacherTs, teacherId).add(chosen.id);
+        ensureSet(classTs, classGroup).add(chosen.id);
+        ensureSet(roomTs, chosenRoom.id).add(chosen.id);
+
+        const tDayPeriods = ensureMap(teacherDayPeriods, teacherId);
+        ensureSet(tDayPeriods, chosen.day).add(chosen.period);
+        inc(ensureMap(teacherDayLoad, teacherId), chosen.day);
+        inc(ensureMap(teacherPeriodLoad, teacherId), chosen.period);
+        inc(ensureMap(subjectDayLoad, subject.id), chosen.day);
+        inc(roomUsage, chosenRoom.id);
+
+        schedule.push({
+          id: generateId(),
+          subject_id: subject.id,
+          teacher_id: teacherId,
+          room_id: chosenRoom.id,
+          timeslot_id: chosen.id,
+          class_group: classGroup,
+        });
+      }
+      // If no slot found, skip; user can add more rooms/timeslots
+    }
+  }
+
+  return schedule;
+}
+
+function enrichSchedule(schedule, { teachers, subjects, rooms, timeslots }) {
+  const teacherById = new Map((teachers || []).map((t) => [t.id, t]));
+  const subjectById = new Map((subjects || []).map((s) => [s.id, s]));
+  const roomById = new Map((rooms || []).map((r) => [r.id, r]));
+  const tsById = new Map((timeslots || []).map((ts) => [ts.id, ts]));
+
+  return (schedule || []).map((e) => {
+    const t = teacherById.get(e.teacher_id) || {};
+    const s = subjectById.get(e.subject_id) || {};
+    const r = roomById.get(e.room_id) || {};
+    const ts = tsById.get(e.timeslot_id) || {};
+    return {
+      ...e,
+      teacher_name: t.name || "N/A",
+      subject_name: s.name || "N/A",
+      subject_code: s.code || "",
+      room_name: r.name || "N/A",
+      day: ts.day || "N/A",
+      period: ts.period || 0,
+      start_time: ts.start_time || "N/A",
+      end_time: ts.end_time || "N/A",
+    };
+  });
+}
 const API = `${BACKEND_URL}/api`;
 
 export default function Dashboard() {
@@ -56,8 +231,18 @@ export default function Dashboard() {
       setRooms(r.data);
       setTimeslots(ts.data);
     } catch (e) {
-      console.error(e);
-      toast.error("Failed to fetch data");
+      // Fallback to localStorage for frontend-only usage
+      const t = readLocal("teachers");
+      const s = readLocal("subjects");
+      const r = readLocal("rooms");
+      const ts = readLocal("timeslots");
+      setTeachers(t);
+      setSubjects(s);
+      setRooms(r);
+      setTimeslots(ts);
+      if (!useMockIfBackendDown) {
+        toast.error("Backend unavailable. Using local data.");
+      }
     }
   };
 
@@ -66,8 +251,13 @@ export default function Dashboard() {
       const res = await axios.get(`${API}/timetable`);
       setTimetable(res.data);
     } catch (e) {
-      console.error(e);
-      toast.error("Failed to fetch timetable");
+      // No backend: show empty timetable
+      const raw = readLocal("timetable", []);
+      const enriched = enrichSchedule(raw, { teachers, subjects, rooms, timeslots });
+      setTimetable(enriched);
+      if (!useMockIfBackendDown) {
+        toast.error("Backend unavailable. Timetable not generated");
+      }
     }
   };
 
@@ -78,7 +268,32 @@ export default function Dashboard() {
       toast.success(res.data.message);
       await fetchAll();
     } catch (e) {
-      toast.error("Failed to generate default time slots");
+      // Fallback: generate default locally
+      const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
+      const base = [
+        { period: 1, start_time: "09:00 AM", end_time: "10:00 AM" },
+        { period: 2, start_time: "10:00 AM", end_time: "11:00 AM" },
+        { period: 3, start_time: "11:15 AM", end_time: "12:15 PM" },
+        { period: 4, start_time: "12:15 PM", end_time: "01:15 PM" },
+        { period: 5, start_time: "02:00 PM", end_time: "03:00 PM" },
+        { period: 6, start_time: "03:00 PM", end_time: "04:00 PM" },
+      ];
+      const generated = [];
+      days.forEach((day) => {
+        base.forEach((slot) => {
+          generated.push({
+            id: generateId(),
+            day,
+            period: slot.period,
+            start_time: slot.start_time,
+            end_time: slot.end_time,
+            label: `${slot.start_time} - ${slot.end_time}`,
+          });
+        });
+      });
+      writeLocal("timeslots", generated);
+      setTimeslots(generated);
+      toast.success(`Generated ${generated.length} default time slots (local)`);
     } finally {
       setLoading(false);
     }
@@ -96,7 +311,13 @@ export default function Dashboard() {
       setTeacherForm({ name: "", email: "", department: "" });
       fetchAll();
     } catch (e) {
-      toast.error("Failed to add teacher");
+      const current = readLocal("teachers");
+      const newTeacher = { id: generateId(), ...teacherForm, available_slots: [] };
+      const next = [...current, newTeacher];
+      writeLocal("teachers", next);
+      setTeachers(next);
+      setTeacherForm({ name: "", email: "", department: "" });
+      toast.success("Teacher added locally");
     }
   };
 
@@ -119,7 +340,19 @@ export default function Dashboard() {
       });
       fetchAll();
     } catch (e) {
-      toast.error("Failed to add subject");
+      const current = readLocal("subjects");
+      const next = [...current, { id: generateId(), ...subjectForm }];
+      writeLocal("subjects", next);
+      setSubjects(next);
+      setSubjectForm({ 
+        name: "", 
+        code: "",
+        sessions_per_week: 3, 
+        teacher_id: "", 
+        class_group: "Class A",
+        duration_minutes: 60 
+      });
+      toast.success("Subject added locally");
     }
   };
 
@@ -135,7 +368,12 @@ export default function Dashboard() {
       setRoomForm({ name: "", capacity: 40, room_type: "Classroom" });
       fetchAll();
     } catch (e) {
-      toast.error("Failed to add room");
+      const current = readLocal("rooms");
+      const next = [...current, { id: generateId(), ...roomForm }];
+      writeLocal("rooms", next);
+      setRooms(next);
+      setRoomForm({ name: "", capacity: 40, room_type: "Classroom" });
+      toast.success("Room added locally");
     }
   };
 
@@ -156,7 +394,17 @@ export default function Dashboard() {
       });
       fetchAll();
     } catch (e) {
-      toast.error("Failed to add time slot");
+      const current = readLocal("timeslots");
+      const next = [...current, { id: generateId(), label: `${timeslotForm.start_time} - ${timeslotForm.end_time}`, ...timeslotForm }];
+      writeLocal("timeslots", next);
+      setTimeslots(next);
+      setTimeslotForm({ 
+        day: "Monday", 
+        period: 1, 
+        start_time: "09:00 AM",
+        end_time: "10:00 AM" 
+      });
+      toast.success("Time slot added locally");
     }
   };
 
@@ -166,7 +414,10 @@ export default function Dashboard() {
       toast.success("Teacher deleted");
       fetchAll();
     } catch (e) {
-      toast.error("Failed to delete teacher");
+      const next = readLocal("teachers").filter((x) => x.id !== id);
+      writeLocal("teachers", next);
+      setTeachers(next);
+      toast.success("Teacher deleted locally");
     }
   };
 
@@ -176,7 +427,10 @@ export default function Dashboard() {
       toast.success("Subject deleted");
       fetchAll();
     } catch (e) {
-      toast.error("Failed to delete subject");
+      const next = readLocal("subjects").filter((x) => x.id !== id);
+      writeLocal("subjects", next);
+      setSubjects(next);
+      toast.success("Subject deleted locally");
     }
   };
 
@@ -186,7 +440,10 @@ export default function Dashboard() {
       toast.success("Room deleted");
       fetchAll();
     } catch (e) {
-      toast.error("Failed to delete room");
+      const next = readLocal("rooms").filter((x) => x.id !== id);
+      writeLocal("rooms", next);
+      setRooms(next);
+      toast.success("Room deleted locally");
     }
   };
 
@@ -196,7 +453,10 @@ export default function Dashboard() {
       toast.success("Time slot deleted");
       fetchAll();
     } catch (e) {
-      toast.error("Failed to delete time slot");
+      const next = readLocal("timeslots").filter((x) => x.id !== id);
+      writeLocal("timeslots", next);
+      setTimeslots(next);
+      toast.success("Time slot deleted locally");
     }
   };
 
@@ -207,7 +467,21 @@ export default function Dashboard() {
       toast.success(res.data.message);
       await fetchTimetable();
     } catch (e) {
-      toast.error(e.response?.data?.detail || "Failed to generate timetable");
+      // Frontend-only generation as a fallback
+      const localSchedule = generateLocalTimetable({
+        teachers,
+        subjects,
+        rooms,
+        timeslots,
+      });
+      const enriched = enrichSchedule(localSchedule, { teachers, subjects, rooms, timeslots });
+      writeLocal("timetable", enriched);
+      setTimetable(enriched);
+      if (localSchedule.length === 0) {
+        toast.error("Add teachers, subjects, rooms, and timeslots to generate a timetable.");
+      } else {
+        toast.success(`Generated ${enriched.length} timetable entries locally`);
+      }
     } finally {
       setLoading(false);
     }
@@ -227,7 +501,7 @@ export default function Dashboard() {
       link.remove();
       toast.success("Timetable exported successfully");
     } catch (e) {
-      toast.error("Failed to export timetable");
+      toast.error("Export requires backend");
     }
   };
 
