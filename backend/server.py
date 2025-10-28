@@ -79,9 +79,9 @@ class TimeSlot(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     day: str
     period: int
-    start_time: str = \"N/A\"
-    end_time: str = \"N/A\"
-    label: str = \"\"
+    start_time: str = "N/A"
+    end_time: str = "N/A"
+    label: str = ""
 
 class TimeSlotCreate(BaseModel):
     day: str
